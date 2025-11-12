@@ -1,0 +1,50 @@
+# Build / compiled output
+**/build/
+*.jar
+*.war
+*.ear
+
+# IDE / editor
+/.idea/
+.vscode/
+*.iml
+*.swp
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Java specific
+*.class
+*.jar
+
+# Issues (don't upload issue folders or files)
+/issue/
+*.issue
+*.issues
+
+# 实验报告
+实验报告.md
+实验报告.pdf
+
+# 范例 / 示例
+范例.zip
+
+# UML files and diagrams
+/uml/
+/UML/
+*.uml
+*.puml
+*.xmi
+*.plantuml
+*.png
+*.svg
+
+# Temporary / misc
+*.tmp
+*.temp
+*.tsv
+**/*.tsv
