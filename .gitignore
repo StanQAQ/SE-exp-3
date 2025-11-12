@@ -12,6 +12,7 @@
 
 # Logs
 *.log
+*.txt
 
 # OS files
 .DS_Store
@@ -31,7 +32,7 @@ Thumbs.db
 *.pdf
 
 # 范例 / 示例
-范例.zip
+*.zip
 
 # UML files and diagrams
 /uml/
