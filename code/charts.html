@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>图表</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto}canvas{background:#fff;border:1px solid #eee;display:block;margin:12px 0}</style>
+</head>
+<body>
+  <h1>图表</h1>
+  <p><a href="/">返回首页</a> | <a href="/add.html">添加/查看账目</a> | <a href="/query.html">查询账目</a></p>
+  <div style="display:flex;gap:16px;">
+    <div style="flex:1"><h3>支出 - 分类占比</h3><canvas id="expensePieChart"></canvas><h3>收入 - 分类占比</h3><canvas id="incomePieChart"></canvas></div>
+    <div style="flex:1">
+      <h3>按月统计（收入/支出）</h3>
+  <select id="monthSelect" style="width:100%;padding:6px;margin-bottom:8px"></select>
+  <div id="balanceInfo" style="font-weight:600;margin-bottom:8px"></div>
+  <canvas id="monthPieChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    async function fetchJSON(url){ const r = await fetch(url); return r.json(); }
+    let expensePieChart, incomePieChart, monthPieChart;
+    async function loadCharts(){
+      const tx = await fetchJSON('/api/transactions');
+      // aggregate by category and by month for each type
+      const expenseByCat = {};
+      const incomeByCat = {};
+      const monthly = {}; // month -> {income:sum, expense:sum}
+      tx.forEach(t=>{
+        const amt = Number(t.amount) || 0;
+        const month = t.date ? t.date.slice(0,7) : '';
+        if(t.type === 'expense') expenseByCat[t.category] = (expenseByCat[t.category]||0) + amt;
+        if(t.type === 'income') incomeByCat[t.category] = (incomeByCat[t.category]||0) + amt;
+        if(month){
+          if(!monthly[month]) monthly[month] = {income:0, expense:0};
+          monthly[month][t.type] = (monthly[month][t.type]||0) + amt;
+        }
+      });
+
+      const expenseLabels = Object.keys(expenseByCat);
+      const expenseData = expenseLabels.map(l => expenseByCat[l]);
+      const incomeLabels = Object.keys(incomeByCat);
+      const incomeData = incomeLabels.map(l => incomeByCat[l]);
+
+      const months = Object.keys(monthly).sort();
+
+      // populate month select
+      const monthSelect = document.getElementById('monthSelect');
+      monthSelect.innerHTML = '';
+      months.forEach(m=>{ const opt = document.createElement('option'); opt.value = m; opt.textContent = m; monthSelect.appendChild(opt); });
+      if(months.length>0) monthSelect.value = months[months.length-1];
+
+      // function to render income/expense pie for a given month
+      function renderMonthPie(month){
+        const incomeTotal = (monthly[month] && monthly[month].income) ? monthly[month].income : 0;
+        const expenseTotal = (monthly[month] && monthly[month].expense) ? monthly[month].expense : 0;
+        const balance = incomeTotal - expenseTotal;
+        const ctxM = document.getElementById('monthPieChart').getContext('2d');
+        if(monthPieChart) monthPieChart.destroy();
+        monthPieChart = new Chart(ctxM, { type: 'pie', data: { labels: ['收入','支出'], datasets: [{ data: [incomeTotal, expenseTotal] }] } });
+        // update balance info
+        const info = document.getElementById('balanceInfo');
+        const sign = balance >= 0 ? '+' : '-';
+        const absVal = Math.abs(balance).toFixed(2);
+        info.textContent = `收支差：${sign}${absVal}`;
+        info.style.color = balance >= 0 ? 'green' : 'red';
+      }
+
+      // render expense pie
+      const ctxExp = document.getElementById('expensePieChart').getContext('2d');
+      if(expensePieChart) expensePieChart.destroy();
+      expensePieChart = new Chart(ctxExp, { type: 'pie', data: { labels: expenseLabels, datasets: [{ data: expenseData }] } });
+
+      // render income pie
+      const ctxInc = document.getElementById('incomePieChart').getContext('2d');
+      if(incomePieChart) incomePieChart.destroy();
+      incomePieChart = new Chart(ctxInc, { type: 'pie', data: { labels: incomeLabels, datasets: [{ data: incomeData }] } });
+
+      // render month pie for the currently selected month
+      if(months.length>0){ renderMonthPie(monthSelect.value); }
+      monthSelect.addEventListener('change', ()=>{ renderMonthPie(monthSelect.value); });
+    }
+    loadCharts();
+  </script>
+</body>
+</html>

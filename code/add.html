@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>添加 / 查看账目</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; max-width: 900px; margin: 20px auto; }
+    form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+    label { display:block; font-size: 0.9em; }
+    input, select { width: 100%; padding: 6px; min-width: 0; }
+    .full { grid-column: 1 / -1; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 6px; }
+  </style>
+</head>
+<body>
+  <h1>添加 / 查看账目</h1>
+  <p><a href="/">返回首页</a> | <a href="/query.html">查询账目</a> | <a href="/charts.html">查看图表</a></p>
+  <form id="txForm">
+    <div>
+  <label>日期<div class="date-wrap"><input type="date" name="date" required /></div></label>
+    </div>
+    <div>
+      <label>金额<input type="number" step="0.01" name="amount" required /></label>
+    </div>
+    <div>
+      <label>类型
+        <select name="type"><option value="expense">支出</option><option value="income">收入</option></select>
+      </label>
+    </div>
+    <div>
+      <label>分类<input type="text" name="category" placeholder="例如：餐饮/交通" /></label>
+    </div>
+    <div class="full">
+      <label>说明<input type="text" name="description" /></label>
+    </div>
+    <div class="full">
+      <button type="submit">添加交易</button>
+    </div>
+  </form>
+
+  <h2>交易列表</h2>
+  <table id="txTable">
+    <thead><tr><th>日期</th><th>金额</th><th>类型</th><th>分类</th><th>说明</th><th>添加时间</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function fetchJSON(url){ const r = await fetch(url); return r.json(); }
+    function formatDateCN(iso) { if (!iso) return ''; const parts = iso.includes('-') ? iso.split('-') : iso.split('/'); if (parts.length<3) return iso; return `${parts[0]}年${parseInt(parts[1],10)}月${parseInt(parts[2],10)}日`; }
+
+    function displayType(type){ return type === 'income' ? '收入' : (type === 'expense' ? '支出' : type); }
+
+    function formatDateTime(iso){ if(!iso) return ''; return iso.replace('T',' '); }
+
+    async function loadTransactions(){
+      const data = await fetchJSON('/api/transactions');
+      const tbody = document.querySelector('#txTable tbody'); tbody.innerHTML='';
+      data.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${formatDateCN(t.date)}</td><td>${t.amount}</td><td>${displayType(t.type)}</td><td>${t.category}</td><td>${t.description}</td><td>${formatDateTime(t.addedAt)}</td><td><button class="del" data-id="${t.id}">删除</button></td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async ()=>{
+        const id = btn.getAttribute('data-id'); if (!id) return; if (!confirm('确认删除这条记录吗？')) return; const r = await fetch('/api/transactions?id='+encodeURIComponent(id), { method:'DELETE' }); if (r.ok) loadTransactions(); else alert('删除失败');
+      }));
+    }
+
+    document.getElementById('txForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = new URLSearchParams();
+      for (const [k,v] of fd.entries()) body.append(k,v);
+      await fetch('/api/transactions',{ method:'POST', body: body.toString(), headers: {'Content-Type':'application/x-www-form-urlencoded'} });
+      // reset form then set date back to today and update overlay spans
+      e.target.reset();
+      const dateInput = document.querySelector('input[name="date"]');
+      const today = new Date().toISOString().slice(0,10);
+      if(dateInput) dateInput.value = today;
+      // refresh list immediately to show the newly added transaction
+      loadTransactions();
+    });
+
+  // set date to today by default
+  document.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+
+    // initial
+    loadTransactions();
+  </script>
+</body>
+</html>

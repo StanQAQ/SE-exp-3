@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>查询账目</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto}
+    form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    input,select{padding:6px;width:100%;min-width:0}
+    .full{grid-column:1/-1}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:6px}
+    /* date overlay: hide native date text but keep calendar icon (WebKit/Blink) */
+    .date-wrap{position:relative}
+    .date-wrap .date-format{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#111}
+    input[type="date"]::-webkit-datetime-edit, input[type="date"]::-webkit-datetime-edit-year-field, input[type="date"]::-webkit-datetime-edit-month-field, input[type="date"]::-webkit-datetime-edit-day-field { color: transparent; }
+    /* for Firefox, overlay will cover the native text */
+    input[type="date"]{position:relative}
+  </style>
+</head>
+<body>
+  <h1>查询账目</h1>
+  <p><a href="/">返回首页</a> | <a href="/add.html">添加/查看账目</a> | <a href="/charts.html">查看图表</a></p>
+  <form id="queryForm">
+    <div><label>开始日期<div class="date-wrap"><input type="date" name="start" /> <span class="date-format" aria-hidden="true"></span></div></label></div>
+    <div><label>结束日期<div class="date-wrap"><input type="date" name="end" /> <span class="date-format" aria-hidden="true"></span></div></label></div>
+  <div><label>类型<select name="type"><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option></select></label></div>
+  <div><label>最小金额<input type="number" name="min" step="0.01" placeholder="0.00" /></label></div>
+  <div><label>最大金额<input type="number" name="max" step="0.01" placeholder="0.00" /></label></div>
+    <div class="full"><button type="submit">查询</button> <button type="button" id="clearQuery">清除</button></div>
+  </form>
+  <table id="txTable"><thead><tr>
+    <th class="sortable" data-key="date">日期 <span class="sort-indicator"></span></th>
+    <th class="sortable" data-key="amount">金额 <span class="sort-indicator"></span></th>
+  <th class="sortable" data-key="type">类型 <span class="sort-indicator"></span></th>
+  <th>分类</th><th>说明</th>
+  <th class="sortable" data-key="addedAt">添加时间 <span class="sort-indicator"></span></th>
+  <th>操作</th></tr></thead><tbody></tbody></table>
+
+  <script>
+  async function fetchJSON(url){ const r = await fetch(url); return r.json(); }
+  function formatDateCN(iso){ if(!iso) return ''; const parts = iso.includes('-') ? iso.split('-') : iso.split('/'); if(parts.length<3) return iso; return `${parts[0]}年${parseInt(parts[1],10)}月${parseInt(parts[2],10)}日`; }
+  function displayType(type){ return type === 'income' ? '收入' : (type === 'expense' ? '支出' : type); }
+
+    // update overlay spans next to date inputs
+    function updateDateSpans(){ document.querySelectorAll('.date-wrap').forEach(w=>{ const inp = w.querySelector('input[type="date"]'); const span = w.querySelector('.date-format'); if(span) span.textContent = inp && inp.value ? formatDateCN(inp.value) : ''; }); }
+
+  // current sort state: default date_desc (最新在上)
+  let currentSort = 'date_desc';
+  async function loadTransactions(query, sort){
+    let url = '/api/transactions'; if(query) url += (query.startsWith('?')?query:('?'+query));
+    const data = await fetchJSON(url);
+    // client-side sorting
+    if(sort) currentSort = sort;
+    if(!currentSort) currentSort = 'date_desc';
+    data.sort((a,b)=>{
+      switch(currentSort){
+        case 'date_asc': return (a.date||'').localeCompare(b.date||'');
+        case 'date_desc': return (b.date||'').localeCompare(a.date||'');
+        case 'amount_asc': return (Number(a.amount)||0) - (Number(b.amount)||0);
+        case 'amount_desc': return (Number(b.amount)||0) - (Number(a.amount)||0);
+  case 'type_asc': return (a.type||'').localeCompare(b.type||'');
+  case 'type_desc': return (b.type||'').localeCompare(a.type||'');
+        case 'addedAt_asc': return (a.addedAt||'').localeCompare(b.addedAt||'');
+        case 'addedAt_desc': return (b.addedAt||'').localeCompare(a.addedAt||'');
+        default: return (b.date||'').localeCompare(a.date||'');
+      }
+    });
+  function formatDateTime(iso){ if(!iso) return ''; return iso.replace('T',' '); }
+  const tbody=document.querySelector('#txTable tbody'); tbody.innerHTML=''; data.forEach(t=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${formatDateCN(t.date)}</td><td>${t.amount}</td><td>${displayType(t.type)}</td><td>${t.category}</td><td>${t.description}</td><td>${formatDateTime(t.addedAt)}</td><td><button class="del" data-id="${t.id}">删除</button></td>`; tbody.appendChild(tr); });
+    tbody.querySelectorAll('.del').forEach(btn=>btn.addEventListener('click', async ()=>{ const id=btn.getAttribute('data-id'); if(!id) return; if(!confirm('确认删除这条记录吗？')) return; const r = await fetch('/api/transactions?id='+encodeURIComponent(id), {method:'DELETE'}); if(r.ok) loadTransactions(query, sort); else alert('删除失败'); }));
+  }
+
+    document.getElementById('queryForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      // validate date range: if both provided and end < start -> show error and clear inputs
+      const form = e.target;
+      const startInput = form.querySelector('input[name="start"]');
+      const endInput = form.querySelector('input[name="end"]');
+      const startVal = startInput ? startInput.value : '';
+      const endVal = endInput ? endInput.value : '';
+      if(startVal && endVal && endVal < startVal){
+        alert('结束日期不能早于开始日期，请重新输入。');
+        if(startInput) startInput.value = '';
+        if(endInput) endInput.value = '';
+        // update overlay spans to reflect cleared values
+        updateDateSpans();
+        return;
+      }
+
+      // validate amount range
+      const minInput = form.querySelector('input[name="min"]');
+      const maxInput = form.querySelector('input[name="max"]');
+      const minVal = minInput ? minInput.value : '';
+      const maxVal = maxInput ? maxInput.value : '';
+      // 如果填写了最小金额，必须是有效数字且非负
+      if(minVal){
+        const minNum = parseFloat(minVal);
+        if(isNaN(minNum)){
+          alert('最小金额不是有效数值，请重新输入。');
+          if(minInput) minInput.value = '';
+          return;
+        }
+        if(minNum < 0){
+          alert('最小金额不能为负数，请重新输入。');
+          if(minInput) minInput.value = '';
+          return;
+        }
+      }
+      // 如果填写了最大金额，必须是有效数字；若同时填写了最小金额，保证 max >= min
+      if(maxVal){
+        const maxNum = parseFloat(maxVal);
+        if(isNaN(maxNum)){
+          alert('最大金额不是有效数值，请重新输入。');
+          if(maxInput) maxInput.value = '';
+          return;
+        }
+        if(minVal){
+          const minNum = parseFloat(minVal);
+          if(!isNaN(minNum) && maxNum < minNum){
+            alert('最大金额不能小于最小金额，请重新输入。');
+            if(minInput) minInput.value = '';
+            if(maxInput) maxInput.value = '';
+            return;
+          }
+        }
+      }
+
+      const fd=new FormData(form);
+      const params=new URLSearchParams();
+      for(const [k,v] of fd.entries()) if(v) params.append(k,v);
+      await loadTransactions(params.toString(), currentSort);
+    });
+    document.getElementById('clearQuery').addEventListener('click', async ()=>{ document.getElementById('queryForm').reset(); updateDateSpans(); await loadTransactions(undefined, currentSort); });
+
+    // attach date input listeners and initialize overlays
+    document.querySelectorAll('.date-wrap input[type="date"]').forEach(inp=> inp.addEventListener('change', updateDateSpans));
+    // header click sorting
+    document.querySelectorAll('#txTable thead th.sortable').forEach(th=>{
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', ()=>{
+        const key = th.getAttribute('data-key');
+        // toggle sort
+        let newSort;
+        if(key === 'date') newSort = currentSort === 'date_desc' ? 'date_asc' : 'date_desc';
+        else if(key === 'amount') newSort = currentSort === 'amount_desc' ? 'amount_asc' : 'amount_desc';
+  else if(key === 'type') newSort = currentSort === 'type_asc' ? 'type_desc' : 'type_asc';
+  else if(key === 'addedAt') newSort = currentSort === 'addedAt_desc' ? 'addedAt_asc' : 'addedAt_desc';
+        else newSort = currentSort;
+        // for type we only implement asc; if desc requested, reverse by using localeCompare opposite
+        // set currentSort and refresh
+        currentSort = newSort;
+        // update indicators
+        updateHeaderIndicators();
+        const fd = new FormData(document.getElementById('queryForm'));
+        const params = new URLSearchParams(); for(const [k,v] of fd.entries()) if(v) params.append(k,v);
+        loadTransactions(params.toString(), currentSort);
+      });
+    });
+    // initialize header indicators
+    function updateHeaderIndicators(){
+      document.querySelectorAll('#txTable thead th.sortable').forEach(th=>{
+        const key = th.getAttribute('data-key');
+        const span = th.querySelector('.sort-indicator');
+        if(!span) return;
+        span.textContent = '';
+        if((key === 'date' && currentSort.startsWith('date')) || (key === 'amount' && currentSort.startsWith('amount')) || (key === 'type' && currentSort.startsWith('type')) || (key === 'addedAt' && currentSort.startsWith('addedAt'))){
+          span.textContent = currentSort.endsWith('_asc') ? ' ▲' : ' ▼';
+        }
+      });
+    }
+    // initial
+    updateDateSpans(); updateHeaderIndicators(); loadTransactions();
+  </script>
+</body>
+</html>
